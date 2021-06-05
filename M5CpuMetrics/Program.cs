@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Configuration;
 using System.Diagnostics;
 using System.IO.Ports;
 using System.Net.NetworkInformation;
@@ -9,6 +10,10 @@ namespace M5CpuMetrics {
         public const string NICName = "Intel(R) Wi-Fi 6 AX201 160MHz";
         static readonly PerformanceCounter cpu =
             CreatePC("Processor", "% Processor Time", "_Total");
+        static readonly PerformanceCounter temp =
+            CreatePC("Thermal Zone Information", "Temperature", "\\_TZ.THM0");
+        static readonly PerformanceCounter gpu =
+            CreatePC("GPU Engine", "Utilization Percentage", "");
         static readonly PerformanceCounter mem =
             CreatePC("Memory", "Available MBytes", "");
         static readonly PerformanceCounter net =
@@ -20,27 +25,97 @@ namespace M5CpuMetrics {
 
         public static async Task Main(string[] args) {
             try {
-                var com = "COM1";
-                var rate = 115200;
+                var setting = LoadSetting();
                 if (args.Length == 2) {
-                    com = args[0];
-                    int.TryParse(args[1], out rate);
+                    setting.COM = args[0];
+                    int.TryParse(args[1], out var rate);
+                    setting.Rate = rate;
                 }
-                using (var port = new SerialPort(com, rate)) {
-                    port.Open();
-                    if (!port.IsOpen)
-                        throw new ApplicationException("Port open failed");
 
-                    while (true) {
-                        var data = GetPer();
-                        port.Write(data);
-                        Console.WriteLine(data);
-                        await Task.Delay(900);
-                    }
+                var core = new MetricsCore(setting);
+                while (true) {
+                    var result = await core.SendValueAsync();
+                    Console.WriteLine(result);
+                    await Task.Delay(900);
                 }
             } catch (Exception ex) {
                 Console.WriteLine(ex.Message);
+                Console.WriteLine("press enter!");
+                Console.ReadLine();
             }
+        }
+
+        private static Setting LoadSetting() {
+            var setting = new Setting() {
+                Meter1 = "CPU",
+                Meter1Hue = 32,
+                Meter1Color = "Orange",
+                Meter2 = "MEM",
+                Meter2Hue = 224,
+                Meter2Color = "Magenta",
+                Meter3 = "NET",
+                Meter3Hue = 160,
+                Meter3Color = "Cyan",
+                Meter4 = "HDD",
+                Meter4Hue = 224,
+                Meter4Color = "Yellow",
+                COM = "COM4",
+                Rate = 115200,
+            };
+            foreach (string key in ConfigurationManager.AppSettings.AllKeys) {
+                switch (key) {
+                    case "Meter1":
+                        setting.Meter1 = ConfigurationManager.AppSettings[key];
+                        break;
+                    case "Meter1Hue":
+                        int.TryParse(ConfigurationManager.AppSettings[key], out var hue1);
+                        setting.Meter1Hue = hue1;
+                        break;
+                    case "Meter1Color":
+                        setting.Meter1Color = ConfigurationManager.AppSettings[key];
+                        break;
+                    case "Meter2":
+                        setting.Meter2 = ConfigurationManager.AppSettings[key];
+                        break;
+                    case "Meter2Hue":
+                        int.TryParse(ConfigurationManager.AppSettings[key], out var hue2);
+                        setting.Meter2Hue = hue2;
+                        break;
+                    case "Meter2Color":
+                        setting.Meter2Color = ConfigurationManager.AppSettings[key];
+                        break;
+                    case "Meter3":
+                        setting.Meter3 = ConfigurationManager.AppSettings[key];
+                        break;
+                    case "Meter3Hue":
+                        int.TryParse(ConfigurationManager.AppSettings[key], out var hue3);
+                        setting.Meter3Hue = hue3;
+                        break;
+                    case "Meter3Color":
+                        setting.Meter3Color = ConfigurationManager.AppSettings[key];
+                        break;
+                    case "Meter4":
+                        setting.Meter4 = ConfigurationManager.AppSettings[key];
+                        break;
+                    case "Meter4Hue":
+                        int.TryParse(ConfigurationManager.AppSettings[key], out var hue4);
+                        setting.Meter4Hue = hue4;
+                        break;
+                    case "Meter4Color":
+                        setting.Meter4Color = ConfigurationManager.AppSettings[key];
+                        break;
+                    case "COM":
+                        setting.COM = ConfigurationManager.AppSettings[key];
+                        break;
+                    case "RATE":
+                        int.TryParse(ConfigurationManager.AppSettings[key], out var rate);
+                        setting.Rate = rate;
+                        break;
+                }
+            }
+
+
+            return setting;
         }
 
         private static string GetPer() {
@@ -53,6 +128,9 @@ namespace M5CpuMetrics {
             var netUsage = net.NextValue();
             var (value, unit) = GetSizeSuffix(netUsage, 0);
             var netunit = string.IsNullOrEmpty(unit) ? " " : unit;
+            var tempC = temp.NextValue() - 273.15;
+            var gpuUsage = gpu.NextValue() - 273.15;
+
             return $"{cpuPer:000}{usedMemPer:000}{value:000}{netunit}{hddPer:000};";
         }
 
@@ -97,5 +175,6 @@ namespace M5CpuMetrics {
             }
             return NICName;
         }
+
     }
 }
